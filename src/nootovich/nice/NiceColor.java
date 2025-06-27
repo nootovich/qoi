@@ -28,4 +28,8 @@ public class NiceColor {
     public Color getColor() {
         return new Color(r, g, b);
     }
+
+    public boolean equals(NiceColor other) {
+        return other.r == this.r && other.g == this.g && other.b == this.b;
+    }
 }
