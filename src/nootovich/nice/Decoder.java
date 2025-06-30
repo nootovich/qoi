@@ -27,40 +27,22 @@ public class Decoder extends NGMain {
         while (niceImageData.data.size() >= 8) {
             int tag = niceImageData.poll(Nice.TAG_LEN);
             if (tag == Nice.COLOR) {
-                int r = niceImageData.poll(redBitDepth) << 8 - redBitDepth | (1 << 8 - redBitDepth) - 1;
-                int g = niceImageData.poll(greenBitDepth) << 8 - greenBitDepth | (1 << 8 - greenBitDepth) - 1;
-                int b = niceImageData.poll(blueBitDepth) << 8 - blueBitDepth | (1 << 8 - blueBitDepth) - 1;
-                imgData[i] = new Color(r, g, b);
-                prevColor  = imgData[i++];
-                // System.out.println("Color: " + imgData[i - 1]);
+                prevNiceColor = new NiceColor(niceImageData.poll(redBitDepth), niceImageData.poll(greenBitDepth), niceImageData.poll(blueBitDepth));
+                imgData[i]    = prevNiceColor.getColor();
+                prevColor     = imgData[i++];
             } else if (tag == Nice.RUN) {
                 int run = niceImageData.poll(Nice.TAG_DATA_LEN) + 1;
                 for (int j = 0; j < run; j++) imgData[i++] = new Color(prevColor.getRGB());
-                // System.out.println("Run: " + run);
             } else if (tag == Nice.RUN_CHUNK) {
                 int run = (niceImageData.poll(Nice.TAG_DATA_LEN) + 1) * Nice.TAG_MAX_DATA;
                 for (int j = 0; j < run; j++) imgData[i++] = new Color(prevColor.getRGB());
-                // System.out.println("Run: " + run);
             } else if (tag == Nice.DIFF_SMALL) {
                 // TODO: unhardcode diff lengths
-                int dr = niceImageData.poll(4) - 8 << 8 - redBitDepth;
-                int dg = niceImageData.poll(4) - 8 << 8 - redBitDepth;
-                int db = niceImageData.poll(3) - 4 << 8 - redBitDepth;
-                int r  = prevColor.getRed() + dr;
-                int g  = prevColor.getGreen() + dg;
-                int b  = prevColor.getBlue() + db;
-                if (r > 255 || g > 255 || b > 255) {
-                    imgData[i] = new Color(0x59C26D);
-                    // imgData[i] = new Color(0x9847CE);
-                    System.out.printf("Overflow at [%d, %d]%n", i % 640, i / 640);
-                } else if (r < 0 || g < 0 || b < 0) {
-                    // imgData[i] = new Color(0x59C26D);
-                    imgData[i] = new Color(0x9847CE);
-                    System.out.printf("Underflow at [%d, %d]%n", i % 640, i / 640);
-                } else {
-                    imgData[i] = new Color(r, g, b);
-                }
-                System.out.printf("Diff: %s => %s%n", prevColor, imgData[i]);
+                int dr = niceImageData.poll(4) - 8;
+                int dg = niceImageData.poll(4) - 8;
+                int db = niceImageData.poll(3) - 4;
+                prevNiceColor = new NiceColor(prevNiceColor.r + dr, prevNiceColor.g + dg, prevNiceColor.b + db);
+                imgData[i] = prevNiceColor.getColor();
                 prevColor = imgData[i++];
             } else {
                 NGUtils.error("Unreachable");
@@ -69,19 +51,37 @@ public class Decoder extends NGMain {
 
         setTickRate(1);
         setFrameRate(1);
-        createWindow(w, h, new DecoderRenderer());
-        start();
-        renderImage(window.g);
-    }
-
-    public void renderImage(NGGraphics g) {
-        g.drawRect(0, 0, w, h, Color.BLACK);
-        for (int y = 0; y < h; y++) {
-            for (int x = 0; x < w; x++) {
-                Color c = imgData[y * w + x];
-                if (c == null) g.drawPixel(x, y, (x / 8 + y / 8) % 2 == 0 ? Color.MAGENTA : Color.BLACK);
-                else g.drawPixel(x, y, c);
+        createWindow(w, h, new NGRenderer() {
+            @Override
+            public void render(NGGraphics g) {
+                g.drawRect(0, 0, w, h, Color.BLACK);
+                for (int y = 0; y < h; y++) {
+                    for (int x = 0; x < w; x++) {
+                        Color c = imgData[y * w + x];
+                        if (c == null) g.drawPixel(x, y, (x / 8 + y / 8) % 2 == 0 ? Color.MAGENTA : Color.BLACK);
+                        else g.drawPixel(x, y, c);
+                    }
+                }
             }
-        }
+
+            @Override
+            public void reset() { }
+        });
+        createWindow(w, h, new NGRenderer() {
+            @Override
+            public void render(NGGraphics g) {
+                g.drawRect(0, 0, w, h, Color.BLACK);
+                g.drawImage(Encoder.inputImage, new NGVec2i(), new NGVec2i(w, h));
+            }
+
+            @Override
+            public void reset() { }
+        });
+        int pad = (1920 - 2 * w) / 3;
+        windows.getFirst().jf.setTitle("NICE");
+        windows.getFirst().jf.setLocation(pad, (1080 - h) / 2);
+        windows.getLast().jf.setTitle("Source");
+        windows.getLast().jf.setLocation(1920 - w - pad, (1080 - h) / 2);
+        start();
     }
 }
